@@ -1,0 +1,259 @@
+version: '3'
+
+vars:
+  KUBECONFIG: ./k3s_kubeconfig.yaml
+  SSH_KEY_PATH: ~/.ssh/hetzner_kube_key
+
+tasks:
+  default:
+    desc: "Show available tasks"
+    cmds:
+      - task --list
+
+  init:
+    desc: "Initialize project with dependency checks and setup wizard"
+    cmds:
+      - echo "🚀 Initializing kube-hetzner project..."
+      - task: check-deps
+      - task: setup-keys
+      - task: setup-config
+      - echo "✅ Initialization complete! Run 'task deploy' to create your cluster."
+
+  check-deps:
+    desc: "Verify all required tools are installed"
+    cmds:
+      - echo "🔍 Checking dependencies..."
+      - |
+        echo "Checking Terraform..."
+        if ! command -v terraform &> /dev/null; then
+          echo "❌ Terraform not found. Install from: https://terraform.io/downloads"
+          exit 1
+        fi
+        terraform version
+      - |
+        echo "Checking kubectl..."
+        if ! command -v kubectl &> /dev/null; then
+          echo "❌ kubectl not found. Install from: https://kubernetes.io/docs/tasks/tools/"
+          exit 1
+        fi
+        kubectl version --client
+      - |
+        echo "Checking Helm..."
+        if ! command -v helm &> /dev/null; then
+          echo "❌ Helm not found. Install from: https://helm.sh/docs/intro/install/"
+          exit 1
+        fi
+        helm version
+      - echo "✅ All dependencies satisfied"
+
+  setup-keys:
+    desc: "Generate SSH keys if they don't exist"
+    status:
+      - test -f {{.SSH_KEY_PATH}}
+    cmds:
+      - echo "🔑 Generating SSH key pair..."
+      - ssh-keygen -t rsa -b 4096 -f {{.SSH_KEY_PATH}} -N ""
+      - echo "✅ SSH keys generated at {{.SSH_KEY_PATH}}"
+
+  setup-config:
+    desc: "Interactive configuration wizard"
+    cmds:
+      - echo "⚙️  Configuration Setup Wizard"
+      - |
+        if [ ! -f terraform.tfvars ]; then
+          echo "Creating terraform.tfvars from template..."
+          cp terraform.tfvars.example terraform.tfvars
+        fi
+      - |
+        echo ""
+        echo "📝 Please edit terraform.tfvars with your credentials:"
+        echo "   - HETZNER_CLOUD_TOKEN (or set TF_VAR_hcloud_token env var)"
+        echo "   - bitwarden_access_token"
+        echo "   - bitwarden_project_id"
+        echo ""
+        echo "🌐 Get Hetzner token: https://console.hetzner.cloud/ → Security → API Tokens"
+        echo "🔐 Get Bitwarden token: https://vault.bitwarden.com/ → Settings → Access tokens"
+        echo ""
+        read -p "Press Enter when you've updated terraform.tfvars..."
+      - echo "✅ Configuration wizard complete"
+
+  deploy:
+    desc: "Deploy complete Kubernetes cluster with External Secrets"
+    deps: [check-config]
+    cmds:
+      - echo "🚀 Starting cluster deployment..."
+      - task: terraform-apply
+      - task: wait-for-cluster
+      - task: wait-for-eso
+      - task: apply-secretstores
+      - task: apply-letsencrypt
+      - echo "🎉 Deployment complete! Run 'task doctor' to verify everything is working."
+
+  check-config:
+    desc: "Verify configuration files exist"
+    preconditions:
+      - test -f terraform.tfvars
+      - test -f {{.SSH_KEY_PATH}}
+    cmds:
+      - echo "✅ Configuration files verified"
+
+  terraform-apply:
+    desc: "Apply Terraform configuration"
+    cmds:
+      - echo "🏗️  Deploying infrastructure with Terraform..."
+      - terraform init
+      - terraform apply -auto-approve
+      - echo "✅ Infrastructure deployed"
+
+  wait-for-cluster:
+    desc: "Wait for cluster to be ready"
+    cmds:
+      - echo "⏳ Waiting for cluster to be ready..."
+      - |
+        for i in {1..30}; do
+          if kubectl --kubeconfig={{.KUBECONFIG}} get nodes &> /dev/null; then
+            echo "✅ Cluster is ready"
+            kubectl --kubeconfig={{.KUBECONFIG}} get nodes
+            break
+          fi
+          echo "Waiting for cluster... ($i/30)"
+          sleep 10
+        done
+
+  wait-for-eso:
+    desc: "Wait for External Secrets Operator to be ready"
+    cmds:
+      - echo "⏳ Waiting for External Secrets Operator..."
+      - kubectl --kubeconfig={{.KUBECONFIG}} wait --for=condition=ready pod -l app.kubernetes.io/name=external-secrets -n external-secrets --timeout=300s
+      - kubectl --kubeconfig={{.KUBECONFIG}} wait --for=condition=ready pod -l app.kubernetes.io/name=bitwarden-sdk-server -n external-secrets --timeout=300s
+      - echo "✅ External Secrets Operator is ready"
+
+  apply-secretstores:
+    desc: "Apply Bitwarden SecretStore configuration"
+    deps: [wait-for-eso]
+    cmds:
+      - echo "🔐 Applying SecretStore configuration..."
+      - kubectl --kubeconfig={{.KUBECONFIG}} apply -f examples/bitwarden-secretstore.yaml
+      - echo "⏳ Waiting for SecretStores to be ready..."
+      - |
+        for i in {1..30}; do
+          if kubectl --kubeconfig={{.KUBECONFIG}} get secretstores -A -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}' | grep -q "True"; then
+            echo "✅ SecretStores are ready"
+            kubectl --kubeconfig={{.KUBECONFIG}} get secretstores -A
+            break
+          fi
+          echo "Waiting for SecretStores... ($i/30)"
+          sleep 10
+        done
+
+  apply-letsencrypt:
+    desc: "Apply Let's Encrypt ClusterIssuer"
+    deps: [wait-for-cluster]
+    cmds:
+      - echo "🔒 Applying Let's Encrypt ClusterIssuer..."
+      - kubectl --kubeconfig={{.KUBECONFIG}} apply -f examples/letsencrypt-issuer.yaml
+      - echo "✅ Let's Encrypt ClusterIssuer applied"
+
+  apply-examples:
+    desc: "Apply example ExternalSecrets (optional)"
+    deps: [apply-secretstores]
+    cmds:
+      - echo "📝 Applying example ExternalSecrets..."
+      - kubectl --kubeconfig={{.KUBECONFIG}} apply -f examples/validator-external-secret.yaml
+      - echo "✅ Example ExternalSecrets applied"
+
+  doctor:
+    desc: "Health check and diagnostic information"
+    cmds:
+      - echo "🩺 Running cluster diagnostics..."
+      - task: check-cluster-health
+      - task: check-eso-health
+      - task: check-secret-sync
+      - echo "🏥 Diagnostics complete"
+
+  check-cluster-health:
+    desc: "Check basic cluster health"
+    cmds:
+      - echo ""
+      - echo "📊 Cluster Status:"
+      - kubectl --kubeconfig={{.KUBECONFIG}} get nodes
+      - echo ""
+      - echo "🏃 Running Pods:"
+      - kubectl --kubeconfig={{.KUBECONFIG}} get pods -A --field-selector=status.phase!=Running | grep -v "Completed" || echo "All pods are running ✅"
+
+  check-eso-health:
+    desc: "Check External Secrets Operator health"
+    cmds:
+      - echo ""
+      - echo "🔐 External Secrets Operator:"
+      - kubectl --kubeconfig={{.KUBECONFIG}} get pods -n external-secrets
+      - echo ""
+      - echo "🗝️  SecretStores:"
+      - kubectl --kubeconfig={{.KUBECONFIG}} get secretstores -A
+
+  check-secret-sync:
+    desc: "Check secret synchronization status"
+    cmds:
+      - echo ""
+      - echo "🔄 ExternalSecrets:"
+      - kubectl --kubeconfig={{.KUBECONFIG}} get externalsecrets -A || echo "No ExternalSecrets found"
+      - echo ""
+      - echo "📦 Secrets in namespaces:"
+      - kubectl --kubeconfig={{.KUBECONFIG}} get secrets -n staging | grep -v kubernetes || echo "No secrets in staging"
+      - kubectl --kubeconfig={{.KUBECONFIG}} get secrets -n production | grep -v kubernetes || echo "No secrets in production"
+
+  logs:
+    desc: "Show External Secrets Operator logs"
+    cmds:
+      - echo "📜 External Secrets Operator logs:"
+      - kubectl --kubeconfig={{.KUBECONFIG}} logs -n external-secrets -l app.kubernetes.io/name=external-secrets --tail=50
+      - echo ""
+      - echo "📜 Bitwarden SDK Server logs:"
+      - kubectl --kubeconfig={{.KUBECONFIG}} logs -n external-secrets -l app.kubernetes.io/name=bitwarden-sdk-server --tail=20
+
+  clean:
+    desc: "Clean teardown of all resources"
+    prompt: "This will destroy your entire cluster. Are you sure?"
+    cmds:
+      - echo "🧹 Cleaning up resources..."
+      - terraform destroy -auto-approve
+      - echo "✅ Cleanup complete"
+
+  reset:
+    desc: "Reset configuration (keeps SSH keys)"
+    prompt: "This will remove terraform.tfvars and .terraform directory. Continue?"
+    cmds:
+      - echo "🔄 Resetting configuration..."
+      - rm -f terraform.tfvars
+      - rm -rf .terraform
+      - rm -f terraform.tfstate*
+      - rm -f {{.KUBECONFIG}}
+      - echo "✅ Configuration reset. Run 'task init' to start over."
+
+  upgrade:
+    desc: "Upgrade cluster components"
+    cmds:
+      - echo "⬆️  Upgrading cluster..."
+      - terraform plan
+      - terraform apply
+      - kubectl --kubeconfig={{.KUBECONFIG}} rollout restart deployment -n external-secrets
+      - echo "✅ Upgrade complete"
+
+  backup:
+    desc: "Backup important configuration"
+    cmds:
+      - echo "💾 Creating backup..."
+      - mkdir -p backups
+      - cp terraform.tfstate backups/terraform.tfstate.$(date +%Y%m%d-%H%M%S)
+      - cp {{.KUBECONFIG}} backups/kubeconfig.$(date +%Y%m%d-%H%M%S) 2>/dev/null || true
+      - echo "✅ Backup created in backups/ directory"
+
+  info:
+    desc: "Show cluster connection information"
+    cmds:
+      - echo "📋 Cluster Information:"
+      - terraform output
+      - echo ""
+      - echo "🔗 Connection:"
+      - echo "  Kubeconfig: {{.KUBECONFIG}}"
+      - echo "  SSH Key: {{.SSH_KEY_PATH}}"

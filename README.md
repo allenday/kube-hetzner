@@ -2,16 +2,34 @@
 
 A complete, production-ready Kubernetes cluster on Hetzner Cloud with External Secrets Operator and Bitwarden Secrets Manager integration.
 
-## Quick Start
+## Quick Start (Automated with Task)
 
-### 1. Prerequisites
+### Option A: One-Command Deployment 🚀
+
+```bash
+# Install Task runner (if not already installed)
+./install-task.sh
+
+# Initialize and deploy everything
+task init    # Setup wizard for credentials and SSH keys  
+task deploy  # Deploy complete cluster with External Secrets
+task doctor  # Verify everything is working
+```
+
+That's it! The Task runner handles all dependencies, timing, and configuration automatically.
+
+### Option B: Manual Step-by-Step
+
+If you prefer manual control or don't want to use Task:
+
+#### 1. Prerequisites
 
 - **Hetzner Cloud Account** - [Create account](https://accounts.hetzner.com/)
 - **SSH Key Pair** - For cluster access
 - **Terraform** >= 1.5.0
 - **kubectl** - For cluster management
 
-### 2. Initial Setup
+#### 2. Initial Setup
 
 **Generate SSH Keys** (if you don't have them):
 ```bash
@@ -38,7 +56,7 @@ locals {
 }
 ```
 
-### 3. Deploy the Cluster
+#### 3. Deploy the Cluster
 
 ```bash
 # Clone or initialize this repository
@@ -58,7 +76,7 @@ This creates:
 - **External Secrets Operator** with Bitwarden integration
 - **kubeconfig file** at `./k3s_kubeconfig.yaml`
 
-### 4. Verify Cluster
+#### 4. Verify Cluster
 
 ```bash
 # Check cluster status
@@ -145,34 +163,60 @@ location = "ash"  # Ashburn for us-east
 
 See [DOMAIN_SETUP.md](./DOMAIN_SETUP.md) if it exists for detailed domain configuration.
 
+## Task-Based Operations
+
+### Common Commands
+```bash
+task --list          # Show all available commands
+task init            # Initialize project with setup wizard
+task deploy          # Deploy complete cluster
+task doctor          # Health check and diagnostics
+task clean           # Clean teardown
+task logs            # Show External Secrets logs
+task info            # Show cluster connection info
+task backup          # Backup important files
+task upgrade         # Upgrade cluster components
+```
+
+### Advanced Operations  
+```bash
+task check-deps      # Verify tool dependencies
+task setup-keys      # Generate SSH keys if missing
+task apply-examples  # Apply example ExternalSecrets
+task reset           # Reset configuration (keeps SSH keys)
+```
+
 ## Maintenance
 
 ### Backup
 ```bash
-# Backup Terraform state
-cp terraform.tfstate terraform.tfstate.backup
+# Automated backup
+task backup
 
-# Export kubeconfig for external use
+# Manual backup
+cp terraform.tfstate terraform.tfstate.backup
 cp k3s_kubeconfig.yaml ~/.kube/config-hetzner
 ```
 
 ### Updates
 ```bash
-# Update cluster
+# Task-based update
+task upgrade
+
+# Manual update
 terraform plan
 terraform apply
-
-# Update External Secrets Operator
-kubectl --kubeconfig=./k3s_kubeconfig.yaml get pods -n external-secrets
+kubectl --kubeconfig=./k3s_kubeconfig.yaml rollout restart deployment -n external-secrets
 ```
 
 ### Monitoring
 ```bash
-# Check cluster health
+# Task-based monitoring  
+task doctor
+
+# Manual monitoring
 kubectl --kubeconfig=./k3s_kubeconfig.yaml get nodes
 kubectl --kubeconfig=./k3s_kubeconfig.yaml top nodes
-
-# Check ingress
 kubectl --kubeconfig=./k3s_kubeconfig.yaml get ingress -A
 ```
 
