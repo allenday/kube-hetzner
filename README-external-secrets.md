@@ -46,17 +46,17 @@ This creates everything in one step:
 - Bitwarden authentication secret
 - Kubeconfig file (`k3s_kubeconfig.yaml`)
 
-### 3. Setup ClusterSecretStore (Cluster Admin)
+### 3. Setup SecretStores (Cluster Admin)
 
 **Important**: Before applying, update the project ID in `examples/bitwarden-secretstore.yaml`:
 - Replace `"74546659-9867-4647-b7eb-b33a0105a522"` with your project ID
 
-Apply the ClusterSecretStore configuration:
+Apply the SecretStore configuration:
 ```bash
 kubectl --kubeconfig=./k3s_kubeconfig.yaml apply -f examples/bitwarden-secretstore.yaml
 ```
 
-This creates a cluster-wide ClusterSecretStore that can be used by ExternalSecrets in any namespace.
+This creates namespace-scoped SecretStores with proper CA certificate configuration for secure communication with the Bitwarden SDK server.
 
 ### 4. Apply Let's Encrypt ClusterIssuer (Cluster Admin)
 
@@ -131,7 +131,7 @@ kubectl --kubeconfig=./k3s_kubeconfig.yaml get pods -A
 ### Check External Secrets Operator
 ```bash
 kubectl --kubeconfig=./k3s_kubeconfig.yaml get pods -n external-secrets
-kubectl --kubeconfig=./k3s_kubeconfig.yaml get clustersecretstores
+kubectl --kubeconfig=./k3s_kubeconfig.yaml get secretstores -A
 ```
 
 ### Check Secret Synchronization
@@ -152,7 +152,7 @@ terraform destroy -auto-approve
 # Recreate everything (includes External Secrets Operator)
 terraform apply -auto-approve
 
-# Reapply SecretStores and ExternalSecrets
+# Reapply SecretStores and ExternalSecrets  
 kubectl --kubeconfig=./k3s_kubeconfig.yaml apply -f examples/bitwarden-secretstore.yaml
 kubectl --kubeconfig=./k3s_kubeconfig.yaml apply -f examples/validator-external-secret.yaml
 ```
