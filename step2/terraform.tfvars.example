@@ -1,0 +1,3 @@
+# Bitwarden Secrets Manager configuration
+# Copy this to terraform.tfvars and fill in your values
+bitwarden_access_token = "your-bws-access-token-here"

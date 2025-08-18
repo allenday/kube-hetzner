@@ -18,70 +18,45 @@ This setup provides a complete, idempotent Terraform configuration for deploying
 
 ### 1. Configure Bitwarden Credentials
 
+Copy the example configuration and add your credentials:
+
+```bash
+cp terraform.tfvars.example terraform.tfvars
+```
+
 Edit `terraform.tfvars` with your Bitwarden Secrets Manager credentials:
 
 ```hcl
 # Bitwarden Secrets Manager configuration
-# Use an access token with permissions for both staging and production projects
 bitwarden_access_token = "your-bws-access-token-here"
+bitwarden_project_id   = "your-project-id-here"
 ```
 
-### 2. Deploy Infrastructure (Two-Step Process)
-
-**Step 1: Deploy K3s Cluster**
+### 2. Deploy Complete Infrastructure (Single Step)
 
 ```bash
 terraform init
 terraform apply -auto-approve
 ```
 
-This creates:
+This creates everything in one step:
 - K3s cluster on Hetzner Cloud (2 nodes: 1 control plane + 1 agent)
 - Load balancer with Traefik ingress controller
-- Kubeconfig file (`k3s_kubeconfig.yaml`)
-
-**Step 2: Deploy External Secrets Operator**
-
-```bash
-cd step2/
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars with your Bitwarden access token
-terraform init
-
-# Clean up any previous state (idempotent)
-./cleanup.sh
-
-# Deploy ESO with Bitwarden SDK server
-terraform apply -auto-approve
-cd ..
-```
-
-This creates:
-- cert-manager for TLS certificate management
 - External Secrets Operator with Bitwarden SDK server
 - Bitwarden authentication secret
-- RBAC permissions for cross-namespace secret access
+- Kubeconfig file (`k3s_kubeconfig.yaml`)
 
-**Note**: The cleanup script automatically handles certificate creation and RBAC permissions, so no manual steps are needed.
+### 3. Setup ClusterSecretStore (Cluster Admin)
 
-### 3. Setup Multi-Tenant SecretStores (Cluster Admin)
+**Important**: Before applying, update the project ID in `examples/bitwarden-secretstore.yaml`:
+- Replace `"74546659-9867-4647-b7eb-b33a0105a522"` with your project ID
 
-**Important**: Before running the setup, update the project IDs in `examples/bitwarden-secretstore.yaml`:
-- Replace `"74546659-9867-4647-b7eb-b33a0105a522"` with your staging project ID
-- Replace `"your-production-project-id"` with your production project ID
-
-Run the idempotent setup script:
+Apply the ClusterSecretStore configuration:
 ```bash
-./setup-multi-tenant.sh
+kubectl --kubeconfig=./k3s_kubeconfig.yaml apply -f examples/bitwarden-secretstore.yaml
 ```
 
-This script handles:
-- Creating staging and production namespaces
-- Copying Bitwarden credentials to each namespace
-- Creating CA bundle secrets for TLS verification
-- Applying the namespace-scoped SecretStores
-
-This creates separate SecretStores for staging and production environments, each connected to their respective Bitwarden projects.
+This creates a cluster-wide ClusterSecretStore that can be used by ExternalSecrets in any namespace.
 
 ### 4. Apply Let's Encrypt ClusterIssuer (Cluster Admin)
 
@@ -125,7 +100,7 @@ metadata:
 spec:
   secretStoreRef:
     name: bitwarden-secretstore
-    kind: SecretStore
+    kind: ClusterSecretStore
   target:
     name: your-app-secrets
   data:
@@ -156,7 +131,7 @@ kubectl --kubeconfig=./k3s_kubeconfig.yaml get pods -A
 ### Check External Secrets Operator
 ```bash
 kubectl --kubeconfig=./k3s_kubeconfig.yaml get pods -n external-secrets
-kubectl --kubeconfig=./k3s_kubeconfig.yaml get secretstores -A
+kubectl --kubeconfig=./k3s_kubeconfig.yaml get clustersecretstores
 ```
 
 ### Check Secret Synchronization
