@@ -1,0 +1,6 @@
+# Bitwarden Secrets Manager configuration
+# Set these via environment variables or override locally:
+# export TF_VAR_bitwarden_access_token="your-token-here"
+# export TF_VAR_bitwarden_project_id="your-project-id-here"
+bitwarden_access_token = ""
+bitwarden_project_id   = ""

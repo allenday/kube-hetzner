@@ -1,0 +1,68 @@
+---
+# Bootstrap issuer for creating initial CA certificate
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: bitwarden-bootstrap-issuer
+spec:
+  selfSigned: {}
+---
+# Bootstrap certificate that will become our CA
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: bitwarden-ca-cert
+  namespace: cert-manager
+spec:
+  commonName: "cert-manager-bitwarden-ca"
+  secretName: bitwarden-ca-certs
+  dnsNames:
+    - localhost
+    - bitwarden-sdk-server.external-secrets.svc.cluster.local
+    - external-secrets-bitwarden-sdk-server.external-secrets.svc.cluster.local
+  ipAddresses:
+    - "127.0.0.1"
+    - "::1"
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS8
+    size: 2048
+  issuerRef:
+    name: bitwarden-bootstrap-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+  isCA: true
+---
+# CA issuer that uses the bootstrap certificate
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: bitwarden-certificate-issuer
+spec:
+  ca:
+    secretName: bitwarden-ca-certs
+---
+# Actual service certificate for the SDK server
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: bitwarden-tls-certs
+  namespace: external-secrets
+spec:
+  commonName: "bitwarden-sdk-server.external-secrets.svc.cluster.local"
+  secretName: bitwarden-tls-certs
+  dnsNames:
+    - localhost
+    - bitwarden-sdk-server.external-secrets.svc.cluster.local
+    - external-secrets-bitwarden-sdk-server.external-secrets.svc.cluster.local
+  ipAddresses:
+    - "127.0.0.1"
+    - "::1"
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS8
+    size: 2048
+  issuerRef:
+    name: bitwarden-certificate-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io

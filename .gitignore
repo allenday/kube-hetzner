@@ -1,0 +1,27 @@
+# Terraform
+terraform.tfvars
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# Kubeconfig (contains cluster credentials)
+k3s_kubeconfig.yaml
+k3s_kustomization_backup.yaml
+
+# Logs and temporary files
+logs/
+*.log
+*.tmp
+*.un~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
