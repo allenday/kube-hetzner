@@ -63,12 +63,46 @@ def check_terraform_vars():
         print(f"❌ Error validating Terraform: {e}")
         return False
 
+def check_ssh_keys():
+    """Check if SSH keys exist and are readable."""
+    print("🔑 Checking SSH keys...")
+    
+    ssh_key_path = os.path.expanduser("~/.ssh/hetzner_kube_key")
+    ssh_pub_path = os.path.expanduser("~/.ssh/hetzner_kube_key.pub")
+    
+    if not os.path.exists(ssh_key_path):
+        print(f"❌ SSH private key not found: {ssh_key_path}")
+        return False
+    
+    if not os.path.exists(ssh_pub_path):
+        print(f"❌ SSH public key not found: {ssh_pub_path}")
+        return False
+    
+    # Check file permissions on private key
+    try:
+        stat_info = os.stat(ssh_key_path)
+        permissions = oct(stat_info.st_mode)[-3:]
+        if permissions != "600":
+            print(f"⚠️  SSH private key permissions are {permissions}, should be 600")
+            print(f"   Run: chmod 600 {ssh_key_path}")
+    except Exception as e:
+        print(f"⚠️  Could not check SSH key permissions: {e}")
+    
+    print("✅ SSH keys found")
+    return True
+
 def main():
     """Check Terraform configuration."""
-    if not check_terraform_vars():
+    ssh_ok = check_ssh_keys()
+    terraform_ok = check_terraform_vars()
+    
+    if not ssh_ok or not terraform_ok:
         print("\n💡 To fix:")
-        print("   export TF_VAR_hcloud_token='your-token-here'")
-        print("   # OR edit terraform.tfvars with your Hetzner Cloud token")
+        if not ssh_ok:
+            print("   task setup-keys  # Generate SSH keys")
+        if not terraform_ok:
+            print("   export TF_VAR_hcloud_token='your-token-here'")
+            print("   # OR edit terraform.tfvars with your Hetzner Cloud token")
         sys.exit(1)
     
     sys.exit(0)

@@ -14,7 +14,9 @@ def check_command(cmd, name, install_url):
         return False
     
     try:
-        result = subprocess.run([cmd, "version"], capture_output=True, text=True, timeout=10)
+        # Use client-only version check for kubectl to avoid cluster connectivity issues
+        version_args = ["version", "--client"] if cmd == "kubectl" else ["version"]
+        result = subprocess.run([cmd] + version_args, capture_output=True, text=True, timeout=10)
         if result.returncode == 0:
             print(f"✅ {name}: {result.stdout.strip().split()[0]}")
             return True
