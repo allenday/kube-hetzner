@@ -32,40 +32,42 @@ bitwarden_access_token = "your-bws-access-token-here"
 bitwarden_project_id   = "your-project-id-here"
 ```
 
-### 2. Deploy Complete Infrastructure (Single Step)
+### 2. Deploy Complete Infrastructure with Task (Recommended)
 
 ```bash
-terraform init
-terraform apply -auto-approve
+# Initialize with setup wizard
+task init
+
+# Deploy everything in one command
+task deploy
 ```
 
 This creates everything in one step:
-- K3s cluster on Hetzner Cloud (2 nodes: 1 control plane + 1 agent)
+- K3s cluster on Hetzner Cloud (2 nodes: 1 control plane + 1 agent)  
 - Load balancer with Traefik ingress controller
 - External Secrets Operator with Bitwarden SDK server
-- Bitwarden authentication secret
+- Certificate infrastructure with proper TLS configuration
+- SecretStores configured for staging and production namespaces
+- Let's Encrypt ClusterIssuer for automatic HTTPS
 - Kubeconfig file (`k3s_kubeconfig.yaml`)
 
-### 3. Setup SecretStores (Cluster Admin)
+### 3. Alternative: Manual Step-by-Step
 
-**Important**: Before applying, update the project ID in `examples/bitwarden-secretstore.yaml`:
-- Replace `"74546659-9867-4647-b7eb-b33a0105a522"` with your project ID
+If you prefer manual deployment:
 
-Apply the SecretStore configuration:
 ```bash
+# Deploy infrastructure
+terraform init
+terraform apply -auto-approve
+
+# Setup SecretStores (update project IDs first)
 kubectl --kubeconfig=./k3s_kubeconfig.yaml apply -f examples/bitwarden-secretstore.yaml
-```
 
-This creates namespace-scoped SecretStores with proper CA certificate configuration for secure communication with the Bitwarden SDK server.
-
-### 4. Apply Let's Encrypt ClusterIssuer (Cluster Admin)
-
-Apply the cluster-wide certificate issuer:
-```bash
+# Apply Let's Encrypt ClusterIssuer  
 kubectl --kubeconfig=./k3s_kubeconfig.yaml apply -f examples/letsencrypt-issuer.yaml
 ```
 
-This provides a cluster-wide `letsencrypt-prod` ClusterIssuer that applications can reference for HTTPS certificates.
+**Important**: Update project IDs in `examples/bitwarden-secretstore.yaml` before applying.
 
 ### 5. Application Deployment (Developer Scope)
 
@@ -180,6 +182,36 @@ kubectl --kubeconfig=./k3s_kubeconfig.yaml get events -n eas-staging
 ### Bitwarden SDK Server Issues
 ```bash
 kubectl --kubeconfig=./k3s_kubeconfig.yaml logs -n external-secrets -l app.kubernetes.io/name=bitwarden-sdk-server
+```
+
+### Common SecretStore Errors
+
+**"failed to append caBundle" Error**:
+- Issue: CA certificate bundle is invalid
+- Solution: Ensure CA certificate is properly extracted from bootstrap certificate
+- Fixed in v1.0.0 with proper CA bundle copying logic
+
+**"Client sent an HTTP request to an HTTPS server" Error**:  
+- Issue: Protocol mismatch in bitwardenServerSDKURL
+- Solution: Use `https://` instead of `http://` in SecretStore configuration
+- Fixed in v1.0.0 by updating examples/bitwarden-secretstore.yaml
+
+**"Resource not found" Error (404)**:
+- Issue: Secret UUIDs don't exist in Bitwarden project
+- Solution: Use `generate-bitwarden-secrets.py` to list actual secret IDs
+- Update application configuration with correct UUIDs from Bitwarden
+
+### Diagnostic Commands
+
+Check SecretStore status:
+```bash
+kubectl --kubeconfig=./k3s_kubeconfig.yaml get secretstores -A
+kubectl --kubeconfig=./k3s_kubeconfig.yaml describe secretstore bitwarden-secretstore -n staging
+```
+
+List secrets in Bitwarden project:
+```bash
+python3 generate-bitwarden-secrets.py --access-token "your-token" --project-id "project-id" --organization-id "org-id"
 ```
 
 ## Clean Up

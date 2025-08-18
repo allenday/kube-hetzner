@@ -170,21 +170,18 @@ See [DOMAIN_SETUP.md](./DOMAIN_SETUP.md) if it exists for detailed domain config
 ```bash
 task --list          # Show all available commands
 task init            # Initialize project with setup wizard
-task deploy          # Deploy complete cluster
+task deploy          # Deploy complete cluster (infrastructure + ESO + secretstores)
 task doctor          # Health check and diagnostics
-task clean           # Clean teardown
+task destroy         # Clean teardown with confirmation
 task logs            # Show External Secrets logs
-task info            # Show cluster connection info
-task backup          # Backup important files
-task upgrade         # Upgrade cluster components
 ```
 
 ### Advanced Operations  
 ```bash
 task check-deps      # Verify tool dependencies
 task setup-keys      # Generate SSH keys if missing
-task apply-examples  # Apply example ExternalSecrets
-task reset           # Reset configuration (keeps SSH keys)
+task setup-config    # Interactive configuration wizard
+task reset           # Reset configuration and start over
 ```
 
 ## Maintenance
