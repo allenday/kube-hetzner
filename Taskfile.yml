@@ -40,7 +40,7 @@ tasks:
 
   deploy:
     desc: "Deploy complete Kubernetes cluster with External Secrets"
-    deps: [check-config]
+    deps: [check-config, check-terraform-config]
     cmds:
       - echo "🚀 Starting cluster deployment..."
       - task: terraform-apply
@@ -117,8 +117,14 @@ tasks:
       - echo "📜 Bitwarden SDK Server logs:"
       - kubectl --kubeconfig={{.KUBECONFIG}} logs -n external-secrets -l app.kubernetes.io/name=bitwarden-sdk-server --tail=20
 
-  clean:
+  check-terraform-config:
+    desc: "Check Terraform configuration and credentials"
+    cmds:
+      - python3 scripts/check_terraform_config.py
+
+  destroy:
     desc: "Clean teardown of all resources"
+    deps: [check-terraform-config]
     prompt: "This will destroy your entire cluster. Are you sure?"
     cmds:
       - echo "🧹 Cleaning up resources..."

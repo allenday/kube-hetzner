@@ -70,6 +70,20 @@ def check_externalsecrets():
     else:
         print(f"❌ Failed to get ExternalSecrets: {stderr}")
 
+def check_terraform_status():
+    """Check Terraform and infrastructure status."""
+    print("\n🏗️  Infrastructure Status:")
+    try:
+        result = subprocess.run(["python3", "scripts/check_terraform_config.py"], 
+                              capture_output=True, text=True, timeout=30)
+        if result.returncode == 0:
+            print("✅ Terraform configuration valid")
+        else:
+            print("❌ Terraform configuration issues detected:")
+            print(result.stdout)
+    except Exception as e:
+        print(f"❌ Failed to check Terraform status: {e}")
+
 def main():
     """Run comprehensive cluster health check."""
     print("🩺 Running cluster diagnostics...")
@@ -80,6 +94,7 @@ def main():
     check_eso_pods()
     check_secretstores()
     check_externalsecrets()
+    check_terraform_status()
     
     print("\n🏥 Diagnostics complete")
 
