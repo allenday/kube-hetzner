@@ -128,8 +128,10 @@ tasks:
       - "kubectl --kubeconfig={{.KUBECONFIG}} get secret bitwarden-credentials -n external-secrets -o yaml | sed 's/namespace: external-secrets/namespace: staging/' | kubectl --kubeconfig={{.KUBECONFIG}} apply -f -"
       - "kubectl --kubeconfig={{.KUBECONFIG}} get secret bitwarden-credentials -n external-secrets -o yaml | sed 's/namespace: external-secrets/namespace: production/' | kubectl --kubeconfig={{.KUBECONFIG}} apply -f -"
       - echo "🔐 Copying CA bundle to namespaces..."
-      - "kubectl --kubeconfig={{.KUBECONFIG}} get secret bitwarden-ca-bundle -n cert-manager -o yaml | sed 's/namespace: cert-manager/namespace: staging/' | kubectl --kubeconfig={{.KUBECONFIG}} apply -f -"
-      - "kubectl --kubeconfig={{.KUBECONFIG}} get secret bitwarden-ca-bundle -n cert-manager -o yaml | sed 's/namespace: cert-manager/namespace: production/' | kubectl --kubeconfig={{.KUBECONFIG}} apply -f -"
+      - kubectl --kubeconfig={{.KUBECONFIG}} delete secret bitwarden-ca-bundle -n staging --ignore-not-found=true
+      - kubectl --kubeconfig={{.KUBECONFIG}} delete secret bitwarden-ca-bundle -n production --ignore-not-found=true
+      - "kubectl --kubeconfig={{.KUBECONFIG}} get secret bitwarden-ca-bundle -n cert-manager -o jsonpath='{.data.ca\\.crt}' | base64 -d | kubectl --kubeconfig={{.KUBECONFIG}} create secret generic bitwarden-ca-bundle -n staging --from-file=ca.crt=/dev/stdin --dry-run=client -o yaml | kubectl --kubeconfig={{.KUBECONFIG}} apply -f -"
+      - "kubectl --kubeconfig={{.KUBECONFIG}} get secret bitwarden-ca-bundle -n cert-manager -o jsonpath='{.data.ca\\.crt}' | base64 -d | kubectl --kubeconfig={{.KUBECONFIG}} create secret generic bitwarden-ca-bundle -n production --from-file=ca.crt=/dev/stdin --dry-run=client -o yaml | kubectl --kubeconfig={{.KUBECONFIG}} apply -f -"
       - echo "🔐 Applying SecretStore configuration..."
       - kubectl --kubeconfig={{.KUBECONFIG}} apply -f examples/bitwarden-secretstore.yaml
       - python3 scripts/wait_for_secretstores.py
