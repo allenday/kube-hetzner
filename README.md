@@ -4,16 +4,17 @@ A complete, production-ready Kubernetes cluster on Hetzner Cloud with External S
 
 ## Quick Start (Automated with Task)
 
-### Option A: One-Command Deployment 🚀
+### Option A: Golden Path (4 Commands) 🚀
 
 ```bash
 # Install Task runner (if not already installed)
 ./install-task.sh
 
-# Initialize and deploy everything
-task init    # Setup wizard for credentials and SSH keys  
-task deploy  # Deploy complete cluster with External Secrets
-task doctor  # Verify everything is working
+# Golden path - complete cluster in 4 commands:
+task init     # 1. Setup wizard (keys, tokens, config)
+task deploy   # 2. Deploy complete cluster (~10 min)
+task doctor   # 3. Verify everything works
+task destroy  # 4. Clean teardown when done
 ```
 
 That's it! The Task runner handles all dependencies, timing, and configuration automatically.

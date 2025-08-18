@@ -43,12 +43,40 @@ tasks:
     deps: [check-config, check-terraform-config]
     cmds:
       - echo "🚀 Starting cluster deployment..."
+      - task: deploy-infrastructure
+      - task: deploy-external-secrets
+      - task: deploy-secretstores
+      - task: deploy-letsencrypt
+      - echo "🎉 Deployment complete! Run 'task doctor' to verify everything is working."
+
+  deploy-infrastructure:
+    desc: "Deploy cluster infrastructure (Step 1)"
+    deps: [check-config, check-terraform-config]
+    cmds:
       - task: terraform-apply
       - task: wait-for-cluster
+      - echo "✅ Infrastructure deployment complete"
+
+  deploy-external-secrets:
+    desc: "Deploy External Secrets Operator (Step 2)"
+    deps: [deploy-infrastructure]
+    cmds:
       - task: wait-for-eso
+      - echo "✅ External Secrets Operator deployment complete"
+
+  deploy-secretstores:
+    desc: "Deploy SecretStores configuration (Step 3)"
+    deps: [deploy-external-secrets]
+    cmds:
       - task: apply-secretstores
+      - echo "✅ SecretStores deployment complete"
+
+  deploy-letsencrypt:
+    desc: "Deploy Let's Encrypt configuration (Step 4)"
+    deps: [deploy-infrastructure]
+    cmds:
       - task: apply-letsencrypt
-      - echo "🎉 Deployment complete! Run 'task doctor' to verify everything is working."
+      - echo "✅ Let's Encrypt deployment complete"
 
   check-config:
     desc: "Verify configuration files exist"
@@ -64,7 +92,12 @@ tasks:
       - echo "🏗️  Deploying infrastructure with Terraform..."
       - terraform init
       - terraform apply -auto-approve
-      - echo "✅ Infrastructure deployed"
+      - echo "✅ Cluster infrastructure deployed"
+      - echo "🔐 Deploying External Secrets Operator..."
+      - cd step2 && bash cleanup.sh
+      - cd step2 && terraform init
+      - cd step2 && terraform apply -auto-approve
+      - echo "✅ External Secrets Operator deployed"
 
   wait-for-cluster:
     desc: "Wait for cluster to be ready"
@@ -77,12 +110,26 @@ tasks:
       - echo "⏳ Waiting for External Secrets Operator..."
       - kubectl --kubeconfig={{.KUBECONFIG}} wait --for=condition=ready pod -l app.kubernetes.io/name=external-secrets -n external-secrets --timeout=300s
       - kubectl --kubeconfig={{.KUBECONFIG}} wait --for=condition=ready pod -l app.kubernetes.io/name=bitwarden-sdk-server -n external-secrets --timeout=300s
+      - kubectl --kubeconfig={{.KUBECONFIG}} wait --for=condition=ready pod -l app.kubernetes.io/name=external-secrets-webhook -n external-secrets --timeout=300s
+      - echo "⏳ Waiting for webhook to be fully ready..."
+      - sleep 10
       - echo "✅ External Secrets Operator is ready"
 
   apply-secretstores:
     desc: "Apply Bitwarden SecretStore configuration"
     deps: [wait-for-eso]
     cmds:
+      - echo "🔐 Creating namespaces..."
+      - kubectl --kubeconfig={{.KUBECONFIG}} create namespace staging --dry-run=client -o yaml | kubectl --kubeconfig={{.KUBECONFIG}} apply -f -
+      - kubectl --kubeconfig={{.KUBECONFIG}} create namespace production --dry-run=client -o yaml | kubectl --kubeconfig={{.KUBECONFIG}} apply -f -
+      - echo "🔐 Copying Bitwarden credentials to namespaces..."
+      - kubectl --kubeconfig={{.KUBECONFIG}} delete secret bitwarden-credentials -n staging --ignore-not-found=true
+      - kubectl --kubeconfig={{.KUBECONFIG}} delete secret bitwarden-credentials -n production --ignore-not-found=true
+      - "kubectl --kubeconfig={{.KUBECONFIG}} get secret bitwarden-credentials -n external-secrets -o yaml | sed 's/namespace: external-secrets/namespace: staging/' | kubectl --kubeconfig={{.KUBECONFIG}} apply -f -"
+      - "kubectl --kubeconfig={{.KUBECONFIG}} get secret bitwarden-credentials -n external-secrets -o yaml | sed 's/namespace: external-secrets/namespace: production/' | kubectl --kubeconfig={{.KUBECONFIG}} apply -f -"
+      - echo "🔐 Copying CA bundle to namespaces..."
+      - "kubectl --kubeconfig={{.KUBECONFIG}} get secret bitwarden-ca-bundle -n cert-manager -o yaml | sed 's/namespace: cert-manager/namespace: staging/' | kubectl --kubeconfig={{.KUBECONFIG}} apply -f -"
+      - "kubectl --kubeconfig={{.KUBECONFIG}} get secret bitwarden-ca-bundle -n cert-manager -o yaml | sed 's/namespace: cert-manager/namespace: production/' | kubectl --kubeconfig={{.KUBECONFIG}} apply -f -"
       - echo "🔐 Applying SecretStore configuration..."
       - kubectl --kubeconfig={{.KUBECONFIG}} apply -f examples/bitwarden-secretstore.yaml
       - python3 scripts/wait_for_secretstores.py
@@ -95,77 +142,36 @@ tasks:
       - kubectl --kubeconfig={{.KUBECONFIG}} apply -f examples/letsencrypt-issuer.yaml
       - echo "✅ Let's Encrypt ClusterIssuer applied"
 
-  apply-examples:
-    desc: "Apply example ExternalSecrets (optional)"
-    deps: [apply-secretstores]
-    cmds:
-      - echo "📝 Applying example ExternalSecrets..."
-      - kubectl --kubeconfig={{.KUBECONFIG}} apply -f examples/validator-external-secret.yaml
-      - echo "✅ Example ExternalSecrets applied"
-
   doctor:
-    desc: "Health check and diagnostic information"
+    desc: "Check cluster health and configuration"
     cmds:
       - python3 scripts/check_cluster_health.py
 
-  logs:
-    desc: "Show External Secrets Operator logs"
+  destroy:
+    desc: "Destroy the cluster and all resources"
+    deps: [check-terraform-config]
+    prompt: "This will destroy your entire cluster. Are you sure?"
     cmds:
-      - echo "📜 External Secrets Operator logs:"
-      - kubectl --kubeconfig={{.KUBECONFIG}} logs -n external-secrets -l app.kubernetes.io/name=external-secrets --tail=50
-      - echo ""
-      - echo "📜 Bitwarden SDK Server logs:"
-      - kubectl --kubeconfig={{.KUBECONFIG}} logs -n external-secrets -l app.kubernetes.io/name=bitwarden-sdk-server --tail=20
+      - echo "🧹 Destroying cluster..."
+      - terraform destroy -auto-approve
+      - echo "✅ Cluster destroyed"
 
+  # Internal tasks (dependencies, not for direct use)
   check-terraform-config:
     desc: "Check Terraform configuration and credentials"
     cmds:
       - python3 scripts/check_terraform_config.py
 
-  destroy:
-    desc: "Clean teardown of all resources"
-    deps: [check-terraform-config]
-    prompt: "This will destroy your entire cluster. Are you sure?"
+  # Advanced tasks (use sparingly)  
+  logs:
+    desc: "Show External Secrets logs for debugging"
     cmds:
-      - echo "🧹 Cleaning up resources..."
-      - terraform destroy -auto-approve
-      - echo "✅ Cleanup complete"
+      - kubectl --kubeconfig={{.KUBECONFIG}} logs -n external-secrets -l app.kubernetes.io/name=external-secrets --tail=20
 
   reset:
-    desc: "Reset configuration (keeps SSH keys)"
-    prompt: "This will remove terraform.tfvars and .terraform directory. Continue?"
+    desc: "Reset configuration and start over"
+    prompt: "This will remove all configuration. Continue?"
     cmds:
-      - echo "🔄 Resetting configuration..."
-      - rm -f terraform.tfvars
+      - rm -f terraform.tfvars .terraform terraform.tfstate* {{.KUBECONFIG}}
       - rm -rf .terraform
-      - rm -f terraform.tfstate*
-      - rm -f {{.KUBECONFIG}}
-      - echo "✅ Configuration reset. Run 'task init' to start over."
-
-  upgrade:
-    desc: "Upgrade cluster components"
-    cmds:
-      - echo "⬆️  Upgrading cluster..."
-      - terraform plan
-      - terraform apply
-      - kubectl --kubeconfig={{.KUBECONFIG}} rollout restart deployment -n external-secrets
-      - echo "✅ Upgrade complete"
-
-  backup:
-    desc: "Backup important configuration"
-    cmds:
-      - echo "💾 Creating backup..."
-      - mkdir -p backups
-      - cp terraform.tfstate backups/terraform.tfstate.$(date +%Y%m%d-%H%M%S) 2>/dev/null || echo "No tfstate to backup"
-      - cp {{.KUBECONFIG}} backups/kubeconfig.$(date +%Y%m%d-%H%M%S) 2>/dev/null || echo "No kubeconfig to backup"
-      - echo "✅ Backup created in backups/ directory"
-
-  info:
-    desc: "Show cluster connection information"
-    cmds:
-      - echo "📋 Cluster Information:"
-      - terraform output
-      - echo ""
-      - echo "🔗 Connection:"
-      - echo "  Kubeconfig {{.KUBECONFIG}}"
-      - echo "  SSH Key {{.SSH_KEY_PATH}}"
+      - echo "✅ Reset complete. Run 'task init' to start over."
