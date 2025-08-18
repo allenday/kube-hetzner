@@ -54,6 +54,8 @@ resource "helm_release" "external_secrets" {
     value = "true"
   }
 
+  wait = false  # Don't wait for pods to be ready - bitwarden-sdk-server needs certificates first
+
   depends_on = [helm_release.cert_manager]
 }
 
@@ -71,4 +73,109 @@ resource "kubernetes_secret" "bitwarden_credentials" {
   type = "Opaque"
 
   depends_on = [helm_release.external_secrets]
+}
+
+# Self-signed ClusterIssuer for bootstrapping Bitwarden certificates
+resource "kubernetes_manifest" "bitwarden_bootstrap_issuer" {
+  manifest = {
+    apiVersion = "cert-manager.io/v1"
+    kind       = "ClusterIssuer"
+    metadata = {
+      name = "bitwarden-bootstrap-issuer"
+    }
+    spec = {
+      selfSigned = {}
+    }
+  }
+
+  depends_on = [helm_release.cert_manager]
+}
+
+# Bootstrap certificate to create CA for Bitwarden
+resource "kubernetes_manifest" "bitwarden_bootstrap_certificate" {
+  manifest = {
+    apiVersion = "cert-manager.io/v1"
+    kind       = "Certificate"
+    metadata = {
+      name      = "bitwarden-bootstrap-certificate"
+      namespace = "cert-manager"
+    }
+    spec = {
+      commonName = "cert-manager-bitwarden-tls"
+      isCA       = true
+      secretName = "bitwarden-ca-bundle"
+      subject = {
+        organizations = ["external-secrets.io"]
+      }
+      dnsNames = [
+        "bitwarden-sdk-server.external-secrets.svc.cluster.local",
+        "external-secrets-bitwarden-sdk-server.external-secrets.svc.cluster.local",
+        "localhost"
+      ]
+      ipAddresses = ["127.0.0.1", "::1"]
+      privateKey = {
+        algorithm = "RSA"
+        encoding  = "PKCS8"
+        size      = 2048
+      }
+      issuerRef = {
+        name  = "bitwarden-bootstrap-issuer"
+        kind  = "ClusterIssuer"
+        group = "cert-manager.io"
+      }
+    }
+  }
+
+  depends_on = [kubernetes_manifest.bitwarden_bootstrap_issuer]
+}
+
+# CA-based ClusterIssuer using the bootstrap certificate
+resource "kubernetes_manifest" "bitwarden_certificate_issuer" {
+  manifest = {
+    apiVersion = "cert-manager.io/v1"
+    kind       = "ClusterIssuer"
+    metadata = {
+      name = "bitwarden-certificate-issuer"
+    }
+    spec = {
+      ca = {
+        secretName = "bitwarden-ca-bundle"
+      }
+    }
+  }
+
+  depends_on = [kubernetes_manifest.bitwarden_bootstrap_certificate]
+}
+
+# TLS certificate for bitwarden-sdk-server service
+resource "kubernetes_manifest" "bitwarden_tls_certificate" {
+  manifest = {
+    apiVersion = "cert-manager.io/v1"
+    kind       = "Certificate"
+    metadata = {
+      name      = "bitwarden-tls-certs"
+      namespace = "external-secrets"
+    }
+    spec = {
+      secretName = "bitwarden-tls-certs"
+      dnsNames = [
+        "bitwarden-sdk-server.external-secrets.svc.cluster.local",
+        "external-secrets-bitwarden-sdk-server.external-secrets.svc.cluster.local",
+        "localhost"
+      ]
+      ipAddresses = ["127.0.0.1", "::1"]
+      privateKey = {
+        algorithm = "RSA"
+        encoding  = "PKCS8"
+        size      = 2048
+      }
+      issuerRef = {
+        name  = "bitwarden-certificate-issuer"
+        kind  = "ClusterIssuer"
+        group = "cert-manager.io"
+      }
+    }
+  }
+
+  depends_on = [kubernetes_manifest.bitwarden_certificate_issuer]
 }

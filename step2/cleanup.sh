@@ -24,12 +24,8 @@ echo "Cleaning up certificate issuers..."
 kubectl --kubeconfig="$KUBECONFIG" delete clusterissuer bitwarden-certificate-issuer --ignore-not-found=true
 kubectl --kubeconfig="$KUBECONFIG" delete clusterissuer bitwarden-bootstrap-issuer --ignore-not-found=true
 
-# Recreate certificates and issuers
-echo "Applying certificate configuration..."
-kubectl --kubeconfig="$KUBECONFIG" apply -f ../examples/bitwarden-cert-issuers.yaml
+# Clean up any existing certificates
+echo "Cleaning up certificates..."
+kubectl --kubeconfig="$KUBECONFIG" delete certificate --all -n external-secrets --ignore-not-found=true
 
-# Wait for CA issuer to be ready
-echo "Waiting for CA issuer to be ready..."
-kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Ready clusterissuer/bitwarden-certificate-issuer --timeout=60s
-
-echo "Cleanup complete. Ready for terraform apply."
+echo "Cleanup complete. Terraform will recreate certificates and issuers."
