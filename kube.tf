@@ -35,7 +35,7 @@ module "kube-hetzner" {
     }
   ]
 
-  # Agent Nodes - minimal setup  
+  # Agent Nodes - scaled for production workloads
   agent_nodepools = [
     {
       name        = "agent-small"
@@ -43,7 +43,7 @@ module "kube-hetzner" {
       location    = "fsn1"
       labels      = []
       taints      = []
-      count       = 1
+      count       = 2
     }
   ]
 

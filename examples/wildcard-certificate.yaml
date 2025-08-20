@@ -1,0 +1,31 @@
+# Example Wildcard Certificate for cyberstorm.dev domains
+# This demonstrates how to request wildcard certificates using DNS-01 challenge
+# Apply after setting up Cloudflare API token secret
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: wildcard-cyberstorm-staging
+  namespace: default  # Change to your application namespace
+spec:
+  secretName: wildcard-cyberstorm-staging-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+  - "*.staging.cyberstorm.dev"
+  - "staging.cyberstorm.dev"
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: wildcard-cyberstorm-production
+  namespace: default  # Change to your application namespace  
+spec:
+  secretName: wildcard-cyberstorm-production-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+  - "*.cyberstorm.dev"
+  - "cyberstorm.dev"

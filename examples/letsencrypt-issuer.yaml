@@ -1,4 +1,5 @@
-# Let's Encrypt ClusterIssuer for HTTPS certificates
+# Let's Encrypt ClusterIssuer with Wildcard SSL Support
+# Supports both DNS-01 (wildcard) and HTTP-01 (regular) challenges
 # Apply this after cluster creation with: kubectl apply -f examples/letsencrypt-issuer.yaml
 
 apiVersion: cert-manager.io/v1
@@ -7,11 +8,25 @@ metadata:
   name: letsencrypt-prod
 spec:
   acme:
-    email: noreply@airitual.ai
+    email: noreply@cyberstorm.dev
     server: https://acme-v02.api.letsencrypt.org/directory
     privateKeySecretRef:
       name: letsencrypt-prod
     solvers:
+    # DNS-01 solver for wildcard domains (*.staging.cyberstorm.dev, *.cyberstorm.dev)
+    - dns01:
+        cloudflare:
+          email: noreply@cyberstorm.dev
+          apiTokenSecretRef:
+            name: cloudflare-api-token-secret
+            key: api-token
+      selector:
+        dnsNames:
+        - "*.staging.cyberstorm.dev"
+        - "*.cyberstorm.dev"
+        - "cyberstorm.dev"
+        - "staging.cyberstorm.dev"
+    # HTTP-01 solver for non-wildcard domains
     - http01:
         ingress:
           ingressClassName: traefik
