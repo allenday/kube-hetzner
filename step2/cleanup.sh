@@ -21,11 +21,21 @@ kubectl --kubeconfig="$KUBECONFIG" create namespace external-secrets
 
 # Clean up any existing certificate issuers (they cache state)
 echo "Cleaning up certificate issuers..."
-kubectl --kubeconfig="$KUBECONFIG" delete clusterissuer bitwarden-certificate-issuer --ignore-not-found=true
-kubectl --kubeconfig="$KUBECONFIG" delete clusterissuer bitwarden-bootstrap-issuer --ignore-not-found=true
+# Only delete ClusterIssuers if cert-manager CRDs exist
+if kubectl --kubeconfig="$KUBECONFIG" get crd clusterissuers.cert-manager.io >/dev/null 2>&1; then
+    kubectl --kubeconfig="$KUBECONFIG" delete clusterissuer bitwarden-certificate-issuer --ignore-not-found=true
+    kubectl --kubeconfig="$KUBECONFIG" delete clusterissuer bitwarden-bootstrap-issuer --ignore-not-found=true
+else
+    echo "cert-manager CRDs not found, skipping ClusterIssuer cleanup"
+fi
 
 # Clean up any existing certificates
 echo "Cleaning up certificates..."
-kubectl --kubeconfig="$KUBECONFIG" delete certificate --all -n external-secrets --ignore-not-found=true
+# Only delete certificates if cert-manager CRDs exist
+if kubectl --kubeconfig="$KUBECONFIG" get crd certificates.cert-manager.io >/dev/null 2>&1; then
+    kubectl --kubeconfig="$KUBECONFIG" delete certificate --all -n external-secrets --ignore-not-found=true
+else
+    echo "cert-manager CRDs not found, skipping certificate cleanup"
+fi
 
 echo "Cleanup complete. Terraform will recreate certificates and issuers."
