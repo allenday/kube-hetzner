@@ -25,21 +25,6 @@ provider "helm" {
   }
 }
 
-# cert-manager for TLS certificate management (required for Bitwarden SDK server)
-resource "helm_release" "cert_manager" {
-  name       = "cert-manager"
-  repository = "https://charts.jetstack.io"
-  chart      = "cert-manager"
-  version    = "v1.15.3"
-  namespace  = "cert-manager"
-  create_namespace = true
-
-  set {
-    name  = "crds.enabled"
-    value = "true"
-  }
-}
-
 # External Secrets Operator installation via Helm
 resource "helm_release" "external_secrets" {
   name       = "external-secrets"
@@ -55,8 +40,6 @@ resource "helm_release" "external_secrets" {
   }
 
   wait = false  # Don't wait for pods to be ready - bitwarden-sdk-server needs certificates first
-
-  depends_on = [helm_release.cert_manager]
 }
 
 # Bitwarden Secrets Manager authentication secret
@@ -75,6 +58,23 @@ resource "kubernetes_secret" "bitwarden_credentials" {
   depends_on = [helm_release.external_secrets]
 }
 
+# Wait for cert-manager to be fully ready before creating ClusterIssuers
+resource "null_resource" "wait_for_cert_manager" {
+  provisioner "local-exec" {
+    command = <<-EOF
+      echo "⏳ Waiting for cert-manager to be fully ready..."
+      kubectl --kubeconfig="../k3s_kubeconfig.yaml" wait --for=condition=available --timeout=600s deployment/cert-manager -n cert-manager
+      kubectl --kubeconfig="../k3s_kubeconfig.yaml" wait --for=condition=available --timeout=600s deployment/cert-manager-cainjector -n cert-manager
+      kubectl --kubeconfig="../k3s_kubeconfig.yaml" wait --for=condition=available --timeout=600s deployment/cert-manager-webhook -n cert-manager
+      echo "⏳ Additional wait for webhook to be fully ready..."
+      sleep 30
+      echo "✅ cert-manager is fully ready"
+    EOF
+  }
+  
+  depends_on = [helm_release.external_secrets]
+}
+
 # Self-signed ClusterIssuer for bootstrapping Bitwarden certificates
 resource "kubernetes_manifest" "bitwarden_bootstrap_issuer" {
   manifest = {
@@ -87,8 +87,8 @@ resource "kubernetes_manifest" "bitwarden_bootstrap_issuer" {
       selfSigned = {}
     }
   }
-
-  depends_on = [helm_release.cert_manager]
+  
+  depends_on = [null_resource.wait_for_cert_manager]
 }
 
 # Bootstrap certificate to create CA for Bitwarden
